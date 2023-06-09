@@ -1,12 +1,24 @@
+import json
+import tempfile
 from ipykernel.kernelbase import Kernel
+from jupyter_client.kernelspec import find_kernel_specs
 from pexpect import replwrap, EOF
 import pexpect
+from pathlib import Path
 
 from subprocess import check_output
 import os.path
 import uuid
 import random
 import string
+
+try:
+    import bash_kernel
+# installation reads __version__. since the package isn't ready yet
+# this will fail, so we add the except clause
+except ModuleNotFoundError:
+    bash_kernel = None
+
 
 import re
 import signal
@@ -101,8 +113,41 @@ class BashKernel(Kernel):
         rand = ''.join(random.choices(string.ascii_uppercase, k=12))
         self.unique_prompt = "PROMPT_" + rand
         Kernel.__init__(self, **kwargs)
-        self._start_bash()
+
+        # determine which bashrc to use
+        kernelspecs = find_kernel_specs()
+        kernelspec_bash = kernelspecs['bash']
+
+        if not kernelspec_bash:
+            raise RuntimeError("Can't find bash kernelspec")
+
+        settings = json.loads(Path(kernelspec_bash, 'settings.json').read_text())
+        CONDA_DEFAULT_ENV = settings.get("conda_default_env")
+
+        if CONDA_DEFAULT_ENV:
+            print("Generating temporary bashrc...")
+            template = os.path.join(os.path.dirname(bash_kernel.__file__), 'assets',
+                                    'bashrc-conda')
+            template_content = (Path(template).read_text()
+                                .format(CONDA_DEFAULT_ENV=CONDA_DEFAULT_ENV))
+
+            self._bashrc_tmp = tempfile.NamedTemporaryFile(mode='w')
+            self._bashrc_tmp.write(template_content)
+            self._bashrc_tmp.flush()
+            self._path_to_bashrc = self._bashrc_tmp.name
+            self._start_bash()
+        else:
+            bashrc = os.path.join(os.path.dirname(pexpect.__file__), 'bashrc.sh')
+            self._bashrc_tmp = None
+            self._path_to_bashrc = bashrc
+            self._start_bash()
+
+
         self._known_display_ids = set()
+
+    def __del__(self):
+        if self._bashrc_tmp:
+            self._bashrc_tmp.close()
 
     def _start_bash(self):
         # Signal handlers are inherited by forked processes, and we can't easily
@@ -115,8 +160,7 @@ class BashKernel(Kernel):
             # bash() function of pexpect/replwrap.py.  Look at the
             # source code there for comments and context for
             # understanding the code here.
-            bashrc = os.path.join(os.path.dirname(pexpect.__file__), 'bashrc.sh')
-            child = pexpect.spawn("bash", ['--rcfile', bashrc], echo=False,
+            child = pexpect.spawn("bash", ['--rcfile', self._path_to_bashrc], echo=False,
                                   encoding='utf-8', codec_errors='replace')
             # Following comment stolen from upstream's REPLWrap:
             # If the user runs 'env', the value of PS1 will be in the output. To avoid

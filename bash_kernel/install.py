@@ -13,11 +13,28 @@ kernel_json = {"argv":[sys.executable,"-m","bash_kernel", "-f", "{connection_fil
  "env":{"PS1": "$"}
 }
 
-def install_my_kernel_spec(user=True, prefix=None):
+def install_my_kernel_spec(user=True, prefix=None, conda_activate=False):
+    if conda_activate:
+        CONDA_DEFAULT_ENV = os.environ.get("CONDA_DEFAULT_ENV")
+
+        if not CONDA_DEFAULT_ENV:
+            raise RuntimeError(
+                "This script must be run from a conda environment "
+                "when using the --conda-activate flag"
+            )
+
+        settings = {"conda_default_env": CONDA_DEFAULT_ENV}
+    else:
+        settings = {"conda_default_env": None}
+
     with TemporaryDirectory() as td:
         os.chmod(td, 0o755) # Starts off as 700, not user readable
         with open(os.path.join(td, 'kernel.json'), 'w') as f:
             json.dump(kernel_json, f, sort_keys=True)
+
+        with open(os.path.join(td, 'settings.json'), 'w') as f:
+            json.dump(settings, f, sort_keys=True)
+
         # TODO: Copy resources once they're specified
 
         print('Installing IPython kernel spec')
@@ -51,6 +68,12 @@ def main(argv=None):
         help='Install KernelSpec in this prefix',
         default=None
     )
+    parser.add_argument(
+        '--conda-activate',
+        help='Initialize the bash kernel with the current conda environment',
+        action='store_true',
+        dest='conda_activate'
+    )
 
     args = parser.parse_args(argv)
 
@@ -63,7 +86,7 @@ def main(argv=None):
     elif args.user or not _is_root():
         user = True
 
-    install_my_kernel_spec(user=user, prefix=prefix)
+    install_my_kernel_spec(user=user, prefix=prefix, conda_activate=args.conda_activate)
 
 if __name__ == '__main__':
     main()
