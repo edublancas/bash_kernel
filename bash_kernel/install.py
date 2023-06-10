@@ -6,15 +6,17 @@ import argparse
 from jupyter_client.kernelspec import KernelSpecManager
 from IPython.utils.tempdir import TemporaryDirectory
 
-kernel_json = {"argv":[sys.executable,"-m","bash_kernel", "-f", "{connection_file}"],
- "display_name":"Bash",
- "language":"bash",
- "codemirror_mode":"shell",
- "env":{"PS1": "$"}
+kernel_json = {
+    "argv": [sys.executable, "-m", "bash_kernel", "-f", "{connection_file}"],
+    "display_name": "Bash",
+    "language": "bash",
+    "codemirror_mode": "shell",
+    "env": {"PS1": "$"},
 }
 
+
 def install_my_kernel_spec(user=True, prefix=None, conda_activate=False):
-    if conda_activate:
+    if conda_activate == "default":
         CONDA_DEFAULT_ENV = os.environ.get("CONDA_DEFAULT_ENV")
 
         if not CONDA_DEFAULT_ENV:
@@ -23,56 +25,64 @@ def install_my_kernel_spec(user=True, prefix=None, conda_activate=False):
                 "when using the --conda-activate flag"
             )
 
-        settings = {"conda_default_env": CONDA_DEFAULT_ENV}
+        conda_default_env = CONDA_DEFAULT_ENV
     else:
-        settings = {"conda_default_env": None}
+        conda_default_env = conda_activate
+
+    if conda_activate is not None:
+        print(f"Default conda environment: {conda_default_env}")
+
+    settings = {"conda_default_env": conda_default_env}
 
     with TemporaryDirectory() as td:
-        os.chmod(td, 0o755) # Starts off as 700, not user readable
-        with open(os.path.join(td, 'kernel.json'), 'w') as f:
+        os.chmod(td, 0o755)  # Starts off as 700, not user readable
+        with open(os.path.join(td, "kernel.json"), "w") as f:
             json.dump(kernel_json, f, sort_keys=True)
 
-        with open(os.path.join(td, 'settings.json'), 'w') as f:
+        with open(os.path.join(td, "settings.json"), "w") as f:
             json.dump(settings, f, sort_keys=True)
 
         # TODO: Copy resources once they're specified
 
-        print('Installing IPython kernel spec')
-        KernelSpecManager().install_kernel_spec(td, 'bash', user=user, prefix=prefix)
+        print("Installing IPython kernel spec")
+        KernelSpecManager().install_kernel_spec(td, "bash", user=user, prefix=prefix)
+
 
 def _is_root():
     try:
         return os.geteuid() == 0
     except AttributeError:
-        return False # assume not an admin on non-Unix platforms
+        return False  # assume not an admin on non-Unix platforms
+
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(
-        description='Install KernelSpec for Bash Kernel'
-    )
+    parser = argparse.ArgumentParser(description="Install KernelSpec for Bash Kernel")
     prefix_locations = parser.add_mutually_exclusive_group()
 
     prefix_locations.add_argument(
-        '--user',
-        help='Install KernelSpec in user\'s home directory',
-        action='store_true'
+        "--user",
+        help="Install KernelSpec in user's home directory",
+        action="store_true",
     )
     prefix_locations.add_argument(
-        '--sys-prefix',
-        help='Install KernelSpec in sys.prefix. Useful in conda / virtualenv',
-        action='store_true',
-        dest='sys_prefix'
+        "--sys-prefix",
+        help="Install KernelSpec in sys.prefix. Useful in conda / virtualenv",
+        action="store_true",
+        dest="sys_prefix",
     )
     prefix_locations.add_argument(
-        '--prefix',
-        help='Install KernelSpec in this prefix',
-        default=None
+        "--prefix", help="Install KernelSpec in this prefix", default=None
     )
+
     parser.add_argument(
-        '--conda-activate',
-        help='Initialize the bash kernel with the current conda environment',
-        action='store_true',
-        dest='conda_activate'
+        "--conda-activate",
+        nargs="?",
+        type=str,
+        const="default",
+        help=(
+            "Initialize the bash kernel with the passed conda environment name. "
+            "If only the --conda-activate is passed, the current environment is used"
+        ),
     )
 
     args = parser.parse_args(argv)
@@ -88,5 +98,6 @@ def main(argv=None):
 
     install_my_kernel_spec(user=user, prefix=prefix, conda_activate=args.conda_activate)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
